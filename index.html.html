@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Votos por Município</title>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        #map { height: 100vh; width: 100%; z-index: 0; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: white; color: #333; box-shadow: 0 3px 14px rgba(0,0,0,0.4); }
+        .leaflet-popup-content p { margin: 0.5em 0; }
+        .transition-opacity { transition: opacity 0.3s ease-in-out; }
+        .modal-body { max-height: 60vh; overflow-y: auto; }
+    </style>
+</head>
+<body class="font-sans bg-gray-100">
+
+    <!-- Tela de Login -->
+    <div id="login-overlay" class="fixed inset-0 bg-gray-800 bg-opacity-90 z-50 flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm p-8 rounded-lg shadow-2xl">
+            <h2 class="text-3xl font-bold text-center text-gray-800 mb-6">Acesso Restrito</h2>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="username" class="block text-gray-700 text-sm font-bold mb-2">Usuário</label>
+                    <input type="text" id="username" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-gray-700 text-sm font-bold mb-2">Senha</label>
+                    <input type="password" id="password" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:shadow-outline" required>
+                </div>
+                <p id="login-error" class="text-red-500 text-xs italic mb-4 h-4"></p>
+                <div class="flex items-center justify-between">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full focus:outline-none focus:shadow-outline">
+                        Entrar
+                    </button>
+                </div>
+            </form>
+            <p class="text-center text-gray-500 text-xs mt-6">
+                Sistema desenvolvido por RAFAEL BLENER
+            </p>
+        </div>
+    </div>
+
+    <!-- Conteúdo Principal da Aplicação (inicialmente oculto) -->
+    <div id="app-content" class="hidden">
+        <div id="map"></div>
+
+        <!-- Caixa para exibir o placar geral -->
+        <div id="placar-geral-caixa" class="fixed top-4 right-4 bg-white p-2 rounded-lg shadow-lg z-10 w-36">
+            <h3 class="text-sm font-bold text-gray-800">Total de Votos</h3>
+            <p id="total-votos-valor" class="text-xl font-bold text-blue-600 text-center">0</p>
+            <div class="border-t my-1"></div>
+            <h4 class="text-sm font-bold text-gray-800">Top 3 Líderes</h4>
+            <ol id="ranking-lideres-lista" class="list-decimal list-inside space-y-1 text-xs">
+                 <!-- Conteúdo gerado dinamicamente -->
+            </ol>
+        </div>
+
+        <!-- Botão Flutuante para Adicionar Nova Liderança -->
+        <button id="add-lider-btn-principal" class="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg z-10" title="Adicionar Nova Liderança">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+        </button>
+        
+        <!-- Modal para CADASTRAR NOVA LIDERANÇA -->
+        <div id="add-lider-modal-principal" class="fixed inset-0 bg-black bg-opacity-50 z-20 flex items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+                <h2 class="text-2xl font-bold mb-4 text-gray-800">Cadastrar Nova Liderança</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Município</label>
+                        <div class="flex items-center space-x-2 mt-1">
+                            <input type="text" id="municipioInputPrincipal" class="block w-full px-3 py-2 border rounded-md" placeholder="Ex: Santos">
+                            <button id="geocode-btn-principal" class="px-4 py-2 bg-gray-600 text-white rounded-md">Buscar</button>
+                        </div>
+                        <p id="geocode-status-principal" class="text-xs text-gray-500 mt-1 h-4"></p>
+                        <input type="hidden" id="latInputPrincipal"><input type="hidden" id="lonInputPrincipal">
+                    </div>
+                    <div class="border-t pt-4">
+                        <label class="block text-sm font-medium text-gray-700">Nome do Líder</label>
+                        <input type="text" id="novoNomeInputPrincipal" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Votos</label>
+                        <input type="number" id="novoVotosInputPrincipal" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Contato</label>
+                        <input type="text" id="novoContatoInputPrincipal" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button id="cancel-lider-principal-btn" class="px-4 py-2 bg-gray-200 rounded-md">Cancelar</button>
+                    <button id="save-lider-principal-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md">Salvar Liderança</button>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Modal para GERENCIAR LÍDERES de um município existente -->
+        <div id="manage-lideres-modal" class="fixed inset-0 bg-black bg-opacity-50 z-30 flex items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
+                <h2 class="text-2xl font-bold mb-2 text-gray-800">Gerenciar Líderes em <span id="manage-modal-title" class="text-blue-600"></span></h2>
+                
+                <div id="lideres-list" class="space-y-3 mb-6 modal-body pr-2">
+                    <!-- Conteúdo gerado dinamicamente -->
+                </div>
+
+                <div class="border-t pt-4">
+                    <h3 class="text-xl font-semibold mb-3 text-gray-700">Adicionar Novo Líder</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium">Nome do Líder</label>
+                            <input type="text" id="add-lider-nome" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Votos</label>
+                            <input type="number" id="add-lider-votos" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium">Contato</label>
+                            <input type="text" id="add-lider-contato" class="mt-1 block w-full px-3 py-2 border rounded-md">
+                        </div>
+                    </div>
+                     <button id="save-new-lider-btn" class="mt-4 w-full md:w-auto px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-md">Adicionar à Lista</button>
+                </div>
+
+                <div class="mt-6 flex justify-end">
+                    <button id="close-manage-modal-btn" class="px-4 py-2 bg-gray-200 rounded-md">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- LÓGICA DE LOGIN ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginForm = document.getElementById('login-form');
+            const appContent = document.getElementById('app-content');
+            const loginOverlay = document.getElementById('login-overlay');
+            const loginError = document.getElementById('login-error');
+
+            // ATENÇÃO: As credenciais estão "ofuscadas" aqui, mas isso NÃO é seguro.
+            // Qualquer pessoa pode decodificar isso facilmente. Use apenas para fins visuais.
+            const userAuth = 'Qk9MU09OQVJP'; // "BOLSONARO" em Base64
+            const passAuth = 'MjAyNg==';      // "2026" em Base64
+
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+
+                // Compara o que foi digitado com as credenciais decodificadas
+                if (username.toUpperCase() === atob(userAuth) && password === atob(passAuth)) {
+                    loginOverlay.classList.add('hidden');
+                    appContent.classList.remove('hidden');
+                    iniciarAplicacao(); // Inicia o mapa e o resto do app
+                } else {
+                    loginError.textContent = 'Usuário ou senha inválidos.';
+                }
+            });
+        });
+
+        // --- INÍCIO DA APLICAÇÃO PRINCIPAL (só roda após o login) ---
+        function iniciarAplicacao() {
+            const map = L.map('map').setView([-23.9, -47.7], 8);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+
+            const mapLayers = {};
+            const DADOS_VOTOS_KEY = 'dadosVotosMultiLider';
+            let municipioEmGerenciamento = null;
+            
+            /*
+                LISTA DE MUNICÍPIOS DE SÃO PAULO COM LATITUDE E LONGITUDE
+            */
+            /*
+                "Adamantina": { "lat": -21.68, "lon": -51.07 }, "Adolfo": { "lat": -21.23, "lon": -49.64 }, "Aguaí": { "lat": -22.05, "lon": -46.97 }, "Águas da Prata": { "lat": -21.93, "lon": -46.71 }, "Águas de Lindóia": { "lat": -22.47, "lon": -46.63 },
+                "Águas de Santa Bárbara": { "lat": -22.88, "lon": -49.24 }, "Águas de São Pedro": { "lat": -22.59, "lon": -47.87 }, "Agudos": { "lat": -22.47, "lon": -48.98 }, "Alambari": { "lat": -23.55, "lon": -47.89 }, "Alfredo Marcondes": { "lat": -21.95, "lon": -51.41 },
+                "Altair": { "lat": -20.52, "lon": -49.05 }, "Altinópolis": { "lat": -21.02, "lon": -47.37 }, "Alto Alegre": { "lat": -21.58, "lon": -50.16 }, "Alumínio": { "lat": -23.53, "lon": -47.26 }, "Álvares Florence": { "lat": -20.32, "lon": -50.10 },
+                "Álvares Machado": { "lat": -22.08, "lon": -51.47 }, "Álvaro de Carvalho": { "lat": -22.02, "lon": -49.72 }, "Alvinlândia": { "lat": -22.44, "lon": -49.76 }, "Americana": { "lat": -22.73, "lon": -47.33 }, "Américo Brasiliense": { "lat": -21.72, "lon": -48.10 },
+                "Américo de Campos": { "lat": -20.29, "lon": -49.74 }, "Amparo": { "lat": -22.70, "lon": -46.76 }, "Analândia": { "lat": -22.12, "lon": -47.66 }, "Andradina": { "lat": -20.89, "lon": -51.37 }, "Angatuba": { "lat": -23.49, "lon": -48.41 },
+                "Anhembi": { "lat": -22.79, "lon": -48.12 }, "Anhumas": { "lat": -22.29, "lon": -51.38 }, "Aparecida": { "lat": -22.84, "lon": -45.22 }, "Aparecida d'Oeste": { "lat": -20.44, "lon": -50.88 }, "Apiaí": { "lat": -24.51, "lon": -48.84 },
+                "Araçariguama": { "lat": -23.43, "lon": -47.06 }, "Araçatuba": { "lat": -21.20, "lon": -50.43 }, "Araçoiaba da Serra": { "lat": -23.50, "lon": -47.61 }, "Aramina": { "lat": -20.09, "lon": -47.78 }, "Arandu": { "lat": -23.13, "lon": -49.03 },
+                "Arapeí": { "lat": -22.67, "lon": -44.44 }, "Araraquara": { "lat": -21.79, "lon": -48.17 }, "Araras": { "lat": -22.35, "lon": -47.38 }, "Arco-Íris": { "lat": -21.77, "lon": -50.48 }, "Arealva": { "lat": -22.02, "lon": -49.09 },
+                "Areias": { "lat": -22.57, "lon": -44.69 }, "Areiópolis": { "lat": -22.66, "lon": -48.66 }, "Ariranha": { "lat": -21.18, "lon": -48.79 }, "Artur Nogueira": { "lat": -22.57, "lon": -47.17 }, "Arujá": { "lat": -23.39, "lon": -46.32 },
+                "Aspásia": { "lat": -20.15, "lon": -50.73 }, "Assis": { "lat": -22.66, "lon": -50.41 }, "Atibaia": { "lat": -23.11, "lon": -46.55 }, "Auriflama": { "lat": -20.68, "lon": -50.55 }, "Avaí": { "lat": -22.14, "lon": -49.33 },
+                "Avanhandava": { "lat": -21.46, "lon": -49.95 }, "Avaré": { "lat": -23.09, "lon": -48.92 }, "Bady Bassitt": { "lat": -20.91, "lon": -49.44 }, "Balbinos": { "lat": -21.90, "lon": -49.38 }, "Bálsamo": { "lat": -20.97, "lon": -49.58 },
+                "Bananal": { "lat": -22.68, "lon": -44.32 }, "Barão de Antonina": { "lat": -23.63, "lon": -49.56 }, "Barbosa": { "lat": -21.29, "lon": -49.97 }, "Bariri": { "lat": -22.07, "lon": -48.74 }, "Barra Bonita": { "lat": -22.49, "lon": -48.55 },
+                "Barra do Chapéu": { "lat": -24.47, "lon": -49.01 }, "Barra do Turvo": { "lat": -24.75, "lon": -48.50 }, "Barretos": { "lat": -20.55, "lon": -48.56 }, "Barrinha": { "lat": -21.19, "lon": -48.16 }, "Barueri": { "lat": -23.51, "lon": -46.87 },
+                "Bastos": { "lat": -21.92, "lon": -50.73 }, "Batatais": { "lat": -20.89, "lon": -47.58 }, "Bauru": { "lat": -22.31, "lon": -49.06 }, "Bebedouro": { "lat": -20.94, "lon": -48.47 }, "Bento de Abreu": { "lat": -21.26, "lon": -50.81 },
+                "Bernardino de Campos": { "lat": -23.01, "lon": -49.57 }, "Bertioga": { "lat": -23.85, "lon": -46.13 }, "Bilac": { "lat": -21.40, "lon": -50.47 }, "Birigui": { "lat": -21.28, "lon": -50.34 }, "Biritiba-Mirim": { "lat": -23.57, "lon": -46.03 },
+                "Boa Esperança do Sul": { "lat": -21.99, "lon": -48.38 }, "Bocaina": { "lat": -22.13, "lon": -48.51 }, "Bofete": { "lat": -23.10, "lon": -48.25 }, "Boituva": { "lat": -23.28, "lon": -47.67 }, "Bom Jesus dos Perdões": { "lat": -23.13, "lon": -46.46 },
+                "Bom Sucesso de Itararé": { "lat": -24.18, "lon": -49.16 }, "Borá": { "lat": -22.27, "lon": -50.54 }, "Boracéia": { "lat": -22.19, "lon": -48.77 }, "Borborema": { "lat": -21.61, "lon": -49.07 }, "Borebi": { "lat": -22.56, "lon": -48.97 },
+                "Botucatu": { "lat": -22.88, "lon": -48.44 }, "Bragança Paulista": { "lat": -22.95, "lon": -46.54 }, "Braúna": { "lat": -21.49, "lon": -50.31 }, "Brejo Alegre": { "lat": -21.16, "lon": -50.16 }, "Brodowski": { "lat": -21.06, "lon": -47.65 },
+                "Brotas": { "lat": -22.28, "lon": -48.12 }, "Buri": { "lat": -23.79, "lon": -48.59 }, "Buritama": { "lat": -21.06, "lon": -50.14 }, "Buritizal": { "lat": -20.19, "lon": -47.70 }, "Cabrália Paulista": { "lat": -22.45, "lon": -49.33 },
+                "Cabreúva": { "lat": -23.30, "lon": -47.13 }, "Caçapava": { "lat": -23.10, "lon": -45.70 }, "Cachoeira Paulista": { "lat": -22.66, "lon": -45.01 }, "Caconde": { "lat": -21.52, "lon": -46.64 }, "Cafelândia": { "lat": -21.80, "lon": -49.60 },
+                "Caiabu": { "lat": -22.01, "lon": -51.23 }, "Caieiras": { "lat": -23.36, "lon": -46.74 }, "Caiuá": { "lat": -21.82, "lon": -51.98 }, "Cajamar": { "lat": -23.35, "lon": -46.87 }, "Cajati": { "lat": -24.73, "lon": -48.10 },
+                "Cajobi": { "lat": -20.88, "lon": -48.81 }, "Cajuru": { "lat": -21.27, "lon": -47.30 }, "Campina do Monte Alegre": { "lat": -23.63, "lon": -48.47 }, "Campinas": { "lat": -22.90, "lon": -47.06 }, "Campo Limpo Paulista": { "lat": -23.20, "lon": -46.78 },
+                "Campos do Jordão": { "lat": -22.73, "lon": -45.59 }, "Campos Novos Paulista": { "lat": -22.60, "lon": -50.00 }, "Cananéia": { "lat": -25.01, "lon": -47.92 }, "Canas": { "lat": -22.70, "lon": -45.05 }, "Cândido Mota": { "lat": -22.74, "lon": -50.38 },
+                "Cândido Rodrigues": { "lat": -21.32, "lon": -48.63 }, "Canitar": { "lat": -23.00, "lon": -49.77 }, "Capão Bonito": { "lat": -24.00, "lon": -48.34 }, "Capela do Alto": { "lat": -23.47, "lon": -47.73 }, "Capivari": { "lat": -23.00, "lon": -47.50 },
+                "Caraguatatuba": { "lat": -23.62, "lon": -45.41 }, "Carapicuíba": { "lat": -23.52, "lon": -46.83 }, "Cardoso": { "lat": -20.08, "lon": -49.91 }, "Casa Branca": { "lat": -21.77, "lon": -47.08 }, "Cássia dos Coqueiros": { "lat": -21.28, "lon": -47.16 },
+                "Castilho": { "lat": -20.87, "lon": -51.58 }, "Catanduva": { "lat": -21.13, "lon": -48.97 }, "Catiguá": { "lat": -21.05, "lon": -49.05 }, "Cedral": { "lat": -20.90, "lon": -49.25 }, "Cerqueira César": { "lat": -23.03, "lon": -49.16 },
+                "Cerquilho": { "lat": -23.16, "lon": -47.74 }, "Cesário Lange": { "lat": -23.22, "lon": -47.95 }, "Charqueada": { "lat": -22.50, "lon": -47.77 }, "Chavantes": { "lat": -23.03, "lon": -49.70 }, "Clementina": { "lat": -21.56, "lon": -50.45 },
+                "Colina": { "lat": -20.71, "lon": -48.54 }, "Colômbia": { "lat": -20.17, "lon": -48.68 }, "Conchal": { "lat": -22.33, "lon": -47.17 }, "Conchas": { "lat": -23.01, "lon": -48.00 }, "Cordeirópolis": { "lat": -22.48, "lon": -47.45 },
+                "Coroados": { "lat": -21.35, "lon": -50.28 }, "Coronel Macedo": { "lat": -23.70, "lon": -49.31 }, "Corumbataí": { "lat": -22.22, "lon": -47.62 }, "Cosmópolis": { "lat": -22.64, "lon": -47.19 }, "Cosmorama": { "lat": -20.47, "lon": -49.78 },
+                "Cotia": { "lat": -23.60, "lon": -46.91 }, "Cravinhos": { "lat": -21.34, "lon": -47.72 }, "Cristais Paulista": { "lat": -20.40, "lon": -47.41 }, "Cruzália": { "lat": -22.73, "lon": -50.79 }, "Cruzeiro": { "lat": -22.57, "lon": -44.96 },
+                "Cubatão": { "lat": -23.89, "lon": -46.42 }, "Cunha": { "lat": -23.07, "lon": -44.95 }, "Descalvado": { "lat": -21.90, "lon": -47.61 }, "Diadema": { "lat": -23.68, "lon": -46.62 }, "Dirce Reis": { "lat": -20.45, "lon": -50.59 },
+                "Dirce Reis": { "lat": -20.66, "lon": -50.58 }, "Divinolândia": { "lat": -21.65, "lon": -46.72 }, "Dobrada": { "lat": -21.51, "lon": -48.40 }, "Dois Córregos": { "lat": -22.36, "lon": -48.37 }, "Dolcinópolis": { "lat": -20.12, "lon": -50.51 },
+                "Dourado": { "lat": -22.10, "lon": -48.31 }, "Dracena": { "lat": -21.48, "lon": -51.53 }, "Duartina": { "lat": -22.41, "lon": -49.40 }, "Dumont": { "lat": -21.23, "lon": -47.97 }, "Echaporã": { "lat": -22.42, "lon": -50.20 },
+                "Eldorado": { "lat": -24.52, "lon": -48.10 }, "Elias Fausto": { "lat": -23.04, "lon": -47.37 }, "Elisiário": { "lat": -21.16, "lon": -49.10 }, "Embaúba": { "lat": -20.98, "lon": -48.83 }, "Embu das Artes": { "lat": -23.64, "lon": -46.85 },
+                "Embu-Guaçu": { "lat": -23.83, "lon": -46.81 }, "Emilianópolis": { "lat": -21.82, "lon": -51.61 }, "Engenheiro Coelho": { "lat": -22.48, "lon": -47.21 }, "Espírito Santo do Pinhal": { "lat": -22.19, "lon": -46.74 }, "Espírito Santo do Turvo": { "lat": -22.70, "lon": -49.42 },
+                "Estiva Gerbi": { "lat": -22.26, "lon": -46.94 }, "Estrela d'Oeste": { "lat": -20.28, "lon": -50.40 }, "Estrela do Norte": { "lat": -22.48, "lon": -51.66 }, "Euclides da Cunha Paulista": { "lat": -22.56, "lon": -52.59 }, "Fartura": { "lat": -23.38, "lon": -49.50 },
+                "Fernando Prestes": { "lat": -21.25, "lon": -48.69 }, "Fernandópolis": { "lat": -20.28, "lon": -50.24 }, "Fernão": { "lat": -22.36, "lon": -49.52 }, "Ferraz de Vasconcelos": { "lat": -23.54, "lon": -46.37 }, "Flora Rica": { "lat": -21.67, "lon": -51.39 },
+                "Floreal": { "lat": -20.67, "lon": -49.86 }, "Flórida Paulista": { "lat": -21.61, "lon": -51.17 }, "Florínia": { "lat": -22.88, "lon": -50.67 }, "Franca": { "lat": -20.53, "lon": -47.40 }, "Francisco Morato": { "lat": -23.28, "lon": -46.74 },
+                "Franco da Rocha": { "lat": -23.32, "lon": -46.72 }, "Gabriel Monteiro": { "lat": -21.49, "lon": -50.55 }, "Gália": { "lat": -22.29, "lon": -49.55 }, "Garça": { "lat": -22.21, "lon": -49.65 }, "Gastão Vidigal": { "lat": -20.79, "lon": -50.19 },
+                "Gavião Peixoto": { "lat": -21.83, "lon": -48.40 }, "General Salgado": { "lat": -20.64, "lon": -50.36 }, "Getulina": { "lat": -21.81, "lon": -49.93 }, "Glicério": { "lat": -21.38, "lon": -50.20 }, "Guaiçara": { "lat": -21.62, "lon": -49.66 },
+                "Guaimbê": { "lat": -21.87, "lon": -49.85 }, "Guaíra": { "lat": -20.31, "lon": -48.31 }, "Guapiaçu": { "lat": -20.79, "lon": -49.22 }, "Guapiara": { "lat": -24.18, "lon": -48.53 }, "Guará": { "lat": -20.42, "lon": -47.82 },
+                "Guaraçaí": { "lat": -21.01, "lon": -51.21 }, "Guaraci": { "lat": -20.49, "lon": -48.94 }, "Guarani d'Oeste": { "lat": -20.12, "lon": -50.37 }, "Guarantã": { "lat": -21.88, "lon": -49.55 }, "Guararapes": { "lat": -21.25, "lon": -50.64 },
+                "Guararema": { "lat": -23.41, "lon": -46.03 }, "Guaratinguetá": { "lat": -22.81, "lon": -45.19 }, "Guareí": { "lat": -23.37, "lon": -48.18 }, "Guariba": { "lat": -21.36, "lon": -48.22 }, "Guarujá": { "lat": -23.99, "lon": -46.25 },
+                "Guarulhos": { "lat": -23.45, "lon": -46.53 }, "Guatapará": { "lat": -21.49, "lon": -47.97 }, "Guzolândia": { "lat": -20.64, "lon": -50.67 }, "Herculândia": { "lat": -22.00, "lon": -50.38 }, "Holambra": { "lat": -22.63, "lon": -47.05 },
+                "Hortolândia": { "lat": -22.85, "lon": -47.22 }, "Iacanga": { "lat": -21.89, "lon": -49.02 }, "Iacri": { "lat": -21.86, "lon": -50.66 }, "Iaras": { "lat": -22.76, "lon": -49.19 }, "Ibaté": { "lat": -21.95, "lon": -47.99 },
+                "Ibirá": { "lat": -21.07, "lon": -49.24 }, "Ibirarema": { "lat": -22.81, "lon": -50.08 }, "Ibitinga": { "lat": -21.75, "lon": -48.82 }, "Ibiúna": { "lat": -23.65, "lon": -47.22 }, "Icém": { "lat": -20.35, "lon": -49.21 },
+                "Iepê": { "lat": -22.65, "lon": -51.07 }, "Igaraçu do Tietê": { "lat": -22.50, "lon": -48.55 }, "Igarapava": { "lat": -20.03, "lon": -47.74 }, "Igaratá": { "lat": -23.20, "lon": -46.15 }, "Iguape": { "lat": -24.70, "lon": -47.55 },
+                "Ilha Comprida": { "lat": -24.74, "lon": -47.54 }, "Ilha Solteira": { "lat": -20.43, "lon": -51.34 }, "Ilhabela": { "lat": -23.77, "lon": -45.35 }, "Indaiatuba": { "lat": -23.09, "lon": -47.21 }, "Indiana": { "lat": -22.18, "lon": -51.24 },
+                "Indiaporã": { "lat": -20.01, "lon": -50.29 }, "Inúbia Paulista": { "lat": -21.66, "lon": -51.02 }, "Ipaussu": { "lat": -23.05, "lon": -49.62 }, "Iperó": { "lat": -23.35, "lon": -47.69 }, "Ipeúna": { "lat": -22.43, "lon": -47.72 },
+                "Ipiguá": { "lat": -20.65, "lon": -49.33 }, "Iporanga": { "lat": -24.58, "lon": -48.59 }, "Ipuã": { "lat": -20.74, "lon": -48.01 }, "Iracemápolis": { "lat": -22.58, "lon": -47.52 }, "Irapuã": { "lat": -21.05, "lon": -49.44 },
+                "Irapuru": { "lat": -21.58, "lon": -51.34 }, "Itaberá": { "lat": -23.85, "lon": -49.13 }, "Itaí": { "lat": -23.41, "lon": -49.09 }, "Itajobi": { "lat": -21.31, "lon": -49.05 }, "Itaju": { "lat": -21.98, "lon": -48.80 },
+                "Itanhaém": { "lat": -24.18, "lon": -46.78 }, "Itaoca": { "lat": -24.64, "lon": -48.80 }, "Itapecerica da Serra": { "lat": -23.71, "lon": -46.84 }, "Itapetininga": { "lat": -23.59, "lon": -48.05 }, "Itapeva": { "lat": -23.98, "lon": -48.87 },
+                "Itapevi": { "lat": -23.54, "lon": -46.93 }, "Itapira": { "lat": -22.43, "lon": -46.82 }, "Itapirapuã Paulista": { "lat": -24.55, "lon": -49.14 }, "Itápolis": { "lat": -21.59, "lon": -48.81 }, "Itaporanga": { "lat": -23.70, "lon": -49.49 },
+                "Itapuí": { "lat": -22.23, "lon": -48.71 }, "Itapura": { "lat": -20.63, "lon": -51.50 }, "Itaquaquecetuba": { "lat": -23.48, "lon": -46.34 }, "Itararé": { "lat": -24.11, "lon": -49.33 }, "Itariri": { "lat": -24.28, "lon": -47.17 },
+                "Itatiba": { "lat": -23.00, "lon": -46.83 }, "Itatinga": { "lat": -23.10, "lon": -48.61 }, "Itirapina": { "lat": -22.25, "lon": -47.82 }, "Itirapuã": { "lat": -20.64, "lon": -47.24 }, "Itobi": { "lat": -21.73, "lon": -46.97 },
+                "Itu": { "lat": -23.26, "lon": -47.29 }, "Itupeva": { "lat": -23.15, "lon": -47.05 }, "Ituverava": { "lat": -20.33, "lon": -47.78 }, "Jaborandi": { "lat": -20.67, "lon": -48.41 }, "Jaboticabal": { "lat": -21.25, "lon": -48.32 },
+                "Jacareí": { "lat": -23.30, "lon": -45.96 }, "Jaci": { "lat": -20.88, "lon": -49.57 }, "Jacupiranga": { "lat": -24.69, "lon": -48.00 }, "Jaguariúna": { "lat": -22.70, "lon": -46.98 }, "Jales": { "lat": -20.27, "lon": -50.54 },
+                "Jambeiro": { "lat": -23.25, "lon": -45.69 }, "Jandira": { "lat": -23.52, "lon": -46.90 }, "Jardinópolis": { "lat": -21.01, "lon": -47.76 }, "Jarinu": { "lat": -23.10, "lon": -46.72 }, "Jaú": { "lat": -22.29, "lon": -48.56 },
+                "Jeriquara": { "lat": -20.31, "lon": -47.58 }, "Joanópolis": { "lat": -22.92, "lon": -46.27 }, "João Ramalho": { "lat": -22.23, "lon": -50.77 }, "José Bonifácio": { "lat": -21.05, "lon": -49.68 }, "Júlio Mesquita": { "lat": -21.84, "lon": -49.78 },
+                "Jumirim": { "lat": -23.11, "lon": -47.78 }, "Jundiaí": { "lat": -23.18, "lon": -46.88 }, "Junqueirópolis": { "lat": -21.51, "lon": -51.42 }, "Juquiá": { "lat": -24.32, "lon": -47.63 }, "Juquitiba": { "lat": -23.92, "lon": -47.07 },
+                "Lagoinha": { "lat": -23.08, "lon": -45.18 }, "Laranjal Paulista": { "lat": -23.05, "lon": -47.83 }, "Lavínia": { "lat": -21.16, "lon": -51.04 }, "Lavrinhas": { "lat": -22.56, "lon": -44.90 }, "Leme": { "lat": -22.18, "lon": -47.38 },
+                "Lençóis Paulista": { "lat": -22.60, "lon": -48.80 }, "Limeira": { "lat": -22.56, "lon": -47.40 }, "Lindóia": { "lat": -22.52, "lon": -46.65 }, "Lins": { "lat": -21.67, "lon": -49.75 }, "Lorena": { "lat": -22.73, "lon": -45.12 },
+                "Lourdes": { "lat": -20.96, "lon": -50.22 }, "Louveira": { "lat": -23.08, "lon": -46.95 }, "Lucélia": { "lat": -21.72, "lon": -51.01 }, "Lucianópolis": { "lat": -22.46, "lon": -49.49 }, "Luís Antônio": { "lat": -21.55, "lon": -47.79 },
+                "Luiziânia": { "lat": -21.66, "lon": -50.32 }, "Lupércio": { "lat": -22.41, "lon": -49.80 }, "Lutécia": { "lat": -22.31, "lon": -50.38 }, "Macatuba": { "lat": -22.50, "lon": -48.70 }, "Macaubal": { "lat": -20.80, "lon": -49.96 },
+                "Macedônia": { "lat": -20.14, "lon": -50.18 }, "Magda": { "lat": -20.64, "lon": -50.23 }, "Mairinque": { "lat": -23.54, "lon": -47.18 }, "Mairiporã": { "lat": -23.31, "lon": -46.58 }, "Manduri": { "lat": -23.00, "lon": -49.32 },
+                "Marabá Paulista": { "lat": -22.09, "lon": -51.96 }, "Maracaí": { "lat": -22.61, "lon": -50.66 }, "Marapoama": { "lat": -21.25, "lon": -49.13 }, "Mariápolis": { "lat": -21.79, "lon": -51.10 }, "Marília": { "lat": -22.21, "lon": -49.94 },
+                "Marinópolis": { "lat": -20.45, "lon": -50.82 }, "Martinópolis": { "lat": -22.14, "lon": -51.17 }, "Matão": { "lat": -21.60, "lon": -48.36 }, "Mauá": { "lat": -23.66, "lon": -46.46 }, "Mendonça": { "lat": -21.18, "lon": -49.55 },
+                "Meridiano": { "lat": -20.36, "lon": -50.16 }, "Mesópolis": { "lat": -20.18, "lon": -50.62 }, "Miguelópolis": { "lat": -20.18, "lon": -48.03 }, "Mineiros do Tietê": { "lat": -22.41, "lon": -48.45 }, "Mira Estrela": { "lat": -19.97, "lon": -50.15 },
+                "Miracatu": { "lat": -24.28, "lon": -47.46 }, "Mirandópolis": { "lat": -21.13, "lon": -51.10 }, "Mirante do Paranapanema": { "lat": -22.29, "lon": -51.91 }, "Mirassol": { "lat": -20.81, "lon": -49.51 }, "Mirassolândia": { "lat": -20.66, "lon": -49.49 },
+                "Mococa": { "lat": -21.46, "lon": -47.00 }, "Mogi das Cruzes": { "lat": -23.52, "lon": -46.18 }, "Mogi Guaçu": { "lat": -22.37, "lon": -46.94 }, "Moji Mirim": { "lat": -22.43, "lon": -46.95 }, "Mombuca": { "lat": -22.93, "lon": -47.61 },
+                "Monções": { "lat": -20.85, "lon": -50.08 }, "Mongaguá": { "lat": -24.09, "lon": -46.62 }, "Monte Alegre do Sul": { "lat": -22.68, "lon": -46.67 }, "Monte Alto": { "lat": -21.26, "lon": -48.49 }, "Monte Aprazível": { "lat": -20.77, "lon": -49.70 },
+                "Monte Azul Paulista": { "lat": -20.90, "lon": -48.64 }, "Monte Castelo": { "lat": -21.29, "lon": -51.56 }, "Monteiro Lobato": { "lat": -22.95, "lon": -45.83 }, "Morro Agudo": { "lat": -20.73, "lon": -48.05 }, "Morungaba": { "lat": -22.88, "lon": -46.79 },
+                "Motuca": { "lat": -21.50, "lon": -48.15 }, "Murutinga do Sul": { "lat": -21.01, "lon": -51.27 }, "Nantes": { "lat": -22.60, "lon": -51.21 }, "Narandiba": { "lat": -22.41, "lon": -51.52 }, "Natividade da Serra": { "lat": -23.38, "lon": -45.44 },
+                "Nazaré Paulista": { "lat": -23.18, "lon": -46.39 }, "Neves Paulista": { "lat": -20.85, "lon": -49.62 }, "Nhandeara": { "lat": -20.69, "lon": -50.03 }, "Nipoã": { "lat": -20.91, "lon": -49.77 }, "Nova Aliança": { "lat": -21.01, "lon": -49.49 },
+                "Nova Campina": { "lat": -24.11, "lon": -48.91 }, "Nova Canaã Paulista": { "lat": -20.40, "lon": -50.95 }, "Nova Castilho": { "lat": -20.75, "lon": -50.41 }, "Nova Europa": { "lat": -21.77, "lon": -48.56 }, "Nova Granada": { "lat": -20.53, "lon": -49.31 },
+                "Nova Guataporanga": { "lat": -21.32, "lon": -51.62 }, "Nova Independência": { "lat": -21.09, "lon": -51.48 }, "Nova Luzitânia": { "lat": -20.87, "lon": -50.26 }, "Nova Odessa": { "lat": -22.77, "lon": -47.29 }, "Novais": { "lat": -21.01, "lon": -48.91 },
+                "Novo Horizonte": { "lat": -21.46, "lon": -49.22 }, "Nuporanga": { "lat": -20.72, "lon": -47.64 }, "Ocauçu": { "lat": -22.45, "lon": -49.92 }, "Óleo": { "lat": -22.93, "lon": -49.35 }, "Olímpia": { "lat": -20.73, "lon": -48.91 },
+                "Onda Verde": { "lat": -20.62, "lon": -49.28 }, "Oriente": { "lat": -22.15, "lon": -50.09 }, "Orindiúva": { "lat": -20.24, "lon": -49.36 }, "Orlândia": { "lat": -20.71, "lon": -47.88 }, "Osasco": { "lat": -23.53, "lon": -46.79 },
+                "Oscar Bressane": { "lat": -22.31, "lon": -50.28 }, "Osvaldo Cruz": { "lat": -21.79, "lon": -50.87 }, "Ourinhos": { "lat": -22.97, "lon": -49.87 }, "Ouro Verde": { "lat": -21.43, "lon": -51.69 }, "Ouroeste": { "lat": -20.00, "lon": -50.37 },
+                "Pacaembu": { "lat": -21.55, "lon": -51.25 }, "Palestina": { "lat": -20.39, "lon": -49.43 }, "Palmares Paulista": { "lat": -21.08, "lon": -48.80 }, "Palmeira d'Oeste": { "lat": -20.16, "lon": -50.81 }, "Palmital": { "lat": -22.78, "lon": -50.21 },
+                "Panorama": { "lat": -21.35, "lon": -51.85 }, "Paraguaçu Paulista": { "lat": -22.41, "lon": -50.57 }, "Paraibuna": { "lat": -23.38, "lon": -45.66 }, "Paraíso": { "lat": -21.01, "lon": -48.77 }, "Paranapanema": { "lat": -23.38, "lon": -48.72 },
+                "Paranapuã": { "lat": -20.10, "lon": -50.56 }, "Parapuã": { "lat": -21.77, "lon": -50.77 }, "Pardinho": { "lat": -23.07, "lon": -48.37 }, "Pariquera-Açu": { "lat": -24.71, "lon": -47.88 }, "Parisi": { "lat": -20.32, "lon": -49.85 },
+                "Patrocínio Paulista": { "lat": -20.63, "lon": -47.28 }, "Paulicéia": { "lat": -21.32, "lon": -51.83 }, "Paulínia": { "lat": -22.76, "lon": -47.15 }, "Paulistânia": { "lat": -22.57, "lon": -49.40 }, "Paulo de Faria": { "lat": -20.32, "lon": -49.53 },
+                "Pederneiras": { "lat": -22.35, "lon": -48.77 }, "Pedra Bela": { "lat": -22.79, "lon": -46.45 }, "Pedranópolis": { "lat": -20.24, "lon": -50.11 }, "Pedregulho": { "lat": -20.25, "lon": -47.47 }, "Pedreira": { "lat": -22.73, "lon": -46.90 },
+                "Pedrinhas Paulista": { "lat": -22.82, "lon": -50.79 }, "Pedro de Toledo": { "lat": -24.27, "lon": -47.22 }, "Penápolis": { "lat": -21.41, "lon": -50.07 }, "Pereira Barreto": { "lat": -20.63, "lon": -51.10 }, "Pereiras": { "lat": -23.08, "lon": -47.98 },
+                "Peruíbe": { "lat": -24.32, "lon": -47.00 }, "Piacatu": { "lat": -21.58, "lon": -50.60 }, "Piedade": { "lat": -23.71, "lon": -47.42 }, "Pilar do Sul": { "lat": -23.81, "lon": -47.71 }, "Pindamonhangaba": { "lat": -22.92, "lon": -45.46 },
+                "Pindorama": { "lat": -21.18, "lon": -48.90 }, "Pinhalzinho": { "lat": -22.77, "lon": -46.59 }, "Piquerobi": { "lat": -21.87, "lon": -51.72 }, "Piquete": { "lat": -22.61, "lon": -45.17 }, "Piracaia": { "lat": -23.05, "lon": -46.35 },
+                "Piracicaba": { "lat": -22.72, "lon": -47.64 }, "Piraju": { "lat": -23.19, "lon": -49.38 }, "Pirajuí": { "lat": -21.99, "lon": -49.45 }, "Pirangi": { "lat": -21.08, "lon": -48.65 }, "Pirapora do Bom Jesus": { "lat": -23.39, "lon": -46.99 },
+                "Pirapozinho": { "lat": -22.27, "lon": -51.50 }, "Pirassununga": { "lat": -21.99, "lon": -47.42 }, "Piratininga": { "lat": -22.40, "lon": -49.13 }, "Pitangueiras": { "lat": -21.00, "lon": -48.22 }, "Planalto": { "lat": -21.03, "lon": -49.95 },
+                "Platina": { "lat": -22.64, "lon": -50.78 }, "Poá": { "lat": -23.52, "lon": -46.34 }, "Poloni": { "lat": -20.78, "lon": -49.83 }, "Pompéia": { "lat": -22.10, "lon": -50.17 }, "Pongaí": { "lat": -21.73, "lon": -49.36 },
+                "Pontal": { "lat": -21.02, "lon": -48.03 }, "Pontalinda": { "lat": -20.43, "lon": -50.52 }, "Pontes Gestal": { "lat": -20.17, "lon": -49.69 }, "Populina": { "lat": -20.01, "lon": -50.53 }, "Porangaba": { "lat": -23.17, "lon": -48.12 },
+                "Porto Feliz": { "lat": -23.21, "lon": -47.52 }, "Porto Ferreira": { "lat": -21.85, "lon": -47.47 }, "Potim": { "lat": -22.83, "lon": -45.25 }, "Potirendaba": { "lat": -21.04, "lon": -49.37 }, "Pracinha": { "lat": -21.82, "lon": -51.08 },
+                "Pradópolis": { "lat": -21.36, "lon": -48.06 }, "Praia Grande": { "lat": -24.00, "lon": -46.40 }, "Pratânia": { "lat": -22.80, "lon": -48.66 }, "Presidente Alves": { "lat": -22.10, "lon": -49.43 }, "Presidente Bernardes": { "lat": -22.00, "lon": -51.85 },
+                "Presidente Epitácio": { "lat": -21.76, "lon": -52.11 }, "Presidente Prudente": { "lat": -22.12, "lon": -51.38 }, "Presidente Venceslau": { "lat": -21.87, "lon": -51.84 }, "Promissão": { "lat": -21.53, "lon": -49.85 }, "Quadra": { "lat": -23.29, "lon": -48.06 },
+                "Quatá": { "lat": -22.24, "lon": -50.69 }, "Queiroz": { "lat": -21.78, "lon": -50.23 }, "Queluz": { "lat": -22.53, "lon": -44.77 }, "Quintana": { "lat": -22.05, "lon": -50.30 }, "Rafard": { "lat": -23.01, "lon": -47.52 },
+                "Rancharia": { "lat": -22.22, "lon": -50.89 }, "Redenção da Serra": { "lat": -23.27, "lon": -45.53 }, "Regente Feijó": { "lat": -22.22, "lon": -51.30 }, "Reginópolis": { "lat": -21.89, "lon": -49.22 }, "Registro": { "lat": -24.48, "lon": -47.84 },
+                "Restinga": { "lat": -20.60, "lon": -47.48 }, "Ribeira": { "lat": -24.65, "lon": -49.00 }, "Ribeirão Bonito": { "lat": -22.06, "lon": -48.17 }, "Ribeirão Branco": { "lat": -24.21, "lon": -48.77 }, "Ribeirão Corrente": { "lat": -20.45, "lon": -47.60 },
+                "Ribeirão do Sul": { "lat": -22.80, "lon": -49.91 }, "Ribeirão dos Índios": { "lat": -21.81, "lon": -51.52 }, "Ribeirão Grande": { "lat": -24.09, "lon": -48.36 }, "Ribeirão Pires": { "lat": -23.71, "lon": -46.41 }, "Ribeirão Preto": { "lat": -21.17, "lon": -47.81 },
+                "Rifaina": { "lat": -20.08, "lon": -47.42 }, "Rincão": { "lat": -21.58, "lon": -48.07 }, "Rinópolis": { "lat": -21.72, "lon": -50.72 }, "Rio Claro": { "lat": -22.41, "lon": -47.56 }, "Rio das Pedras": { "lat": -22.84, "lon": -47.60 },
+                "Rio Grande da Serra": { "lat": -23.74, "lon": -46.39 }, "Riolândia": { "lat": -20.14, "lon": -49.68 }, "Riversul": { "lat": -23.83, "lon": -49.42 }, "Rosana": { "lat": -22.58, "lon": -53.05 }, "Roseira": { "lat": -22.89, "lon": -45.30 },
+                "Rubiácea": { "lat": -21.29, "lon": -50.72 }, "Rubinéia": { "lat": -20.18, "lon": -51.00 }, "Sabino": { "lat": -21.46, "lon": -49.57 }, "Sagres": { "lat": -21.87, "lon": -50.95 }, "Sales": { "lat": -21.34, "lon": -49.49 },
+                "Sales Oliveira": { "lat": -20.77, "lon": -47.83 }, "Salesópolis": { "lat": -23.53, "lon": -45.84 }, "Salmourão": { "lat": -21.62, "lon": -50.86 }, "Saltinho": { "lat": -22.84, "lon": -47.67 }, "Salto": { "lat": -23.20, "lon": -47.28 },
+                "Salto de Pirapora": { "lat": -23.64, "lon": -47.57 }, "Salto Grande": { "lat": -22.89, "lon": -49.98 }, "Sandovalina": { "lat": -22.45, "lon": -51.75 }, "Santa Adélia": { "lat": -21.24, "lon": -48.80 }, "Santa Albertina": { "lat": -20.03, "lon": -50.71 },
+                "Santa Bárbara d'Oeste": { "lat": -22.75, "lon": -47.41 }, "Santa Branca": { "lat": -23.39, "lon": -45.88 }, "Santa Clara d'Oeste": { "lat": -20.07, "lon": -50.93 }, "Santa Cruz da Conceição": { "lat": -22.14, "lon": -47.45 }, "Santa Cruz da Esperança": { "lat": -21.20, "lon": -47.45 },
+                "Santa Cruz das Palmeiras": { "lat": -21.82, "lon": -47.24 }, "Santa Cruz do Rio Pardo": { "lat": -22.89, "lon": -49.62 }, "Santa Ernestina": { "lat": -21.46, "lon": -48.39 }, "Santa Fé do Sul": { "lat": -20.21, "lon": -50.92 }, "Santa Gertrudes": { "lat": -22.45, "lon": -47.52 },
+                "Santa Isabel": { "lat": -23.31, "lon": -46.22 }, "Santa Lúcia": { "lat": -21.68, "lon": -48.08 }, "Santa Maria da Serra": { "lat": -22.56, "lon": -48.16 }, "Santa Mercedes": { "lat": -21.35, "lon": -51.74 }, "Santa Rita d'Oeste": { "lat": -20.15, "lon": -51.07 },
+                "Santa Rita do Passa Quatro": { "lat": -21.71, "lon": -47.47 }, "Santa Rosa de Viterbo": { "lat": -21.47, "lon": -47.36 }, "Santa Salete": { "lat": -20.25, "lon": -50.73 }, "Santana da Ponte Pensa": { "lat": -20.25, "lon": -50.81 }, "Santana de Parnaíba": { "lat": -23.44, "lon": -46.91 },
+                "Santo Anastácio": { "lat": -21.96, "lon": -51.65 }, "Santo André": { "lat": -23.65, "lon": -46.53 }, "Santo Antônio da Alegria": { "lat": -21.07, "lon": -47.15 }, "Santo Antônio de Posse": { "lat": -22.60, "lon": -46.91 }, "Santo Antônio do Aracanguá": { "lat": -20.94, "lon": -50.48 },
+                "Santo Antônio do Jardim": { "lat": -22.11, "lon": -46.68 }, "Santo Antônio do Pinhal": { "lat": -22.82, "lon": -45.66 }, "Santo Expedito": { "lat": -21.85, "lon": -51.39 }, "Santópolis do Aguapeí": { "lat": -21.75, "lon": -50.51 }, "Santos": { "lat": -23.96, "lon": -46.33 },
+                "São Bento do Sapucaí": { "lat": -22.68, "lon": -45.73 }, "São Bernardo do Campo": { "lat": -23.70, "lon": -46.55 }, "São Caetano do Sul": { "lat": -23.62, "lon": -46.55 }, "São Carlos": { "lat": -22.01, "lon": -47.89 }, "São Francisco": { "lat": -20.35, "lon": -50.71 },
+                "São João da Boa Vista": { "lat": -21.96, "lon": -46.79 }, "São João das Duas Pontes": { "lat": -20.37, "lon": -50.40 }, "São João de Iracema": { "lat": -20.55, "lon": -50.31 }, "São João do Pau d'Alho": { "lat": -21.28, "lon": -51.68 }, "São Joaquim da Barra": { "lat": -20.58, "lon": -47.85 },
+                "São José da Bela Vista": { "lat": -20.60, "lon": -47.65 }, "São José do Barreiro": { "lat": -22.64, "lon": -44.57 }, "São José do Rio Pardo": { "lat": -21.59, "lon": -46.88 }, "São José do Rio Preto": { "lat": -20.82, "lon": -49.37 }, "São José dos Campos": { "lat": -23.17, "lon": -45.88 },
+                "São Lourenço da Serra": { "lat": -23.85, "lon": -46.94 }, "São Luís do Paraitinga": { "lat": -23.22, "lon": -45.31 }, "São Manuel": { "lat": -22.73, "lon": -48.57 }, "São Miguel Arcanjo": { "lat": -23.87, "lon": -47.99 }, "São Paulo": { "lat": -23.55, "lon": -46.63 },
+                "São Pedro": { "lat": -22.54, "lon": -47.91 }, "São Pedro do Turvo": { "lat": -22.75, "lon": -49.73 }, "São Roque": { "lat": -23.52, "lon": -47.13 }, "São Sebastião": { "lat": -23.76, "lon": -45.40 }, "São Sebastião da Grama": { "lat": -21.72, "lon": -46.82 },
+                "São Simão": { "lat": -21.47, "lon": -47.55 }, "São Vicente": { "lat": -23.96, "lon": -46.39 }, "Sarapuí": { "lat": -23.64, "lon": -47.82 }, "Sarutaiá": { "lat": -23.27, "lon": -49.46 }, "Sebastianópolis do Sul": { "lat": -20.65, "lon": -49.92 },
+                "Serra Azul": { "lat": -21.31, "lon": -47.56 }, "Serra Negra": { "lat": -22.61, "lon": -46.70 }, "Serrana": { "lat": -21.21, "lon": -47.59 }, "Sertãozinho": { "lat": -21.13, "lon": -47.99 }, "Sete Barras": { "lat": -24.38, "lon": -47.92 },
+                "Severínia": { "lat": -20.81, "lon": -48.80 }, "Silveiras": { "lat": -22.66, "lon": -44.85 }, "Socorro": { "lat": -22.59, "lon": -46.52 }, "Sorocaba": { "lat": -23.50, "lon": -47.45 }, "Sud Mennucci": { "lat": -20.68, "lon": -50.93 },
+                "Sumaré": { "lat": -22.82, "lon": -47.26 }, "Suzanápolis": { "lat": -20.49, "lon": -51.02 }, "Suzano": { "lat": -23.54, "lon": -46.31 }, "Tabapuã": { "lat": -20.96, "lon": -49.03 }, "Tabatinga": { "lat": -21.71, "lon": -48.68 },
+                "Taboão da Serra": { "lat": -23.60, "lon": -46.75 }, "Taciba": { "lat": -22.38, "lon": -51.27 }, "Taguaí": { "lat": -23.45, "lon": -49.40 }, "Taiaçu": { "lat": -21.14, "lon": -48.51 }, "Taiúva": { "lat": -21.12, "lon": -48.45 },
+                "Tambaú": { "lat": -21.70, "lon": -47.27 }, "Tanabi": { "lat": -20.62, "lon": -49.64 }, "Tapiraí": { "lat": -23.96, "lon": -47.50 }, "Tapiratiba": { "lat": -21.46, "lon": -46.74 }, "Taquaral": { "lat": -21.07, "lon": -48.41 },
+                "Taquaritinga": { "lat": -21.40, "lon": -48.50 }, "Taquarituba": { "lat": -23.53, "lon": -49.24 }, "Taquarivaí": { "lat": -23.91, "lon": -48.69 }, "Tarabai": { "lat": -22.30, "lon": -51.55 }, "Tarumã": { "lat": -22.74, "lon": -50.57 },
+                "Tatuí": { "lat": -23.35, "lon": -47.85 }, "Taubaté": { "lat": -23.02, "lon": -45.55 }, "Tejupá": { "lat": -23.34, "lon": -49.37 }, "Teodoro Sampaio": { "lat": -22.53, "lon": -52.16 }, "Terra Roxa": { "lat": -20.78, "lon": -48.33 },
+                "Tietê": { "lat": -23.10, "lon": -47.71 }, "Timburi": { "lat": -23.20, "lon": -49.61 }, "Torre de Pedra": { "lat": -23.23, "lon": -48.20 }, "Torrinha": { "lat": -22.42, "lon": -48.17 }, "Trabiju": { "lat": -21.95, "lon": -48.33 },
+                "Tremembé": { "lat": -22.95, "lon": -45.54 }, "Três Fronteiras": { "lat": -20.22, "lon": -50.88 }, "Tuiuti": { "lat": -22.81, "lon": -46.69 }, "Tupã": { "lat": -21.93, "lon": -50.51 }, "Tupi Paulista": { "lat": -21.38, "lon": -51.57 },
+                "Turiúba": { "lat": -20.93, "lon": -50.11 }, "Turmalina": { "lat": -20.03, "lon": -50.47 }, "Ubarana": { "lat": -21.16, "lon": -49.70 }, "Ubatuba": { "lat": -23.43, "lon": -45.07 }, "Ubirajara": { "lat": -22.52, "lon": -49.65 },
+                "Uchoa": { "lat": -20.95, "lon": -49.17 }, "União Paulista": { "lat": -20.53, "lon": -49.88 }, "Urânia": { "lat": -20.24, "lon": -50.64 }, "Uru": { "lat": -21.78, "lon": -49.28 }, "Urupês": { "lat": -21.20, "lon": -49.29 },
+                "Valentim Gentil": { "lat": -20.42, "lon": -50.08 }, "Valinhos": { "lat": -22.97, "lon": -46.99 }, "Valparaíso": { "lat": -21.22, "lon": -50.86 }, "Vargem": { "lat": -22.88, "lon": -46.41 }, "Vargem Grande do Sul": { "lat": -21.83, "lon": -46.89 },
+                "Vargem Grande Paulista": { "lat": -23.60, "lon": -47.02 }, "Várzea Paulista": { "lat": -23.21, "lon": -46.82 }, "Vera Cruz": { "lat": -22.21, "lon": -49.82 }, "Vinhedo": { "lat": -23.02, "lon": -46.97 }, "Viradouro": { "lat": -20.87, "lon": -48.29 },
+                "Vista Alegre do Alto": { "lat": -21.16, "lon": -48.62 }, "Vitória Brasil": { "lat": -20.19, "lon": -50.48 }, "Votorantim": { "lat": -23.54, "lon": -47.43 }, "Votuporanga": { "lat": -20.42, "lon": -49.97 }, "Zacarias": { "lat": -21.05, "lon": -50.05 }
+            */
+
+            // --- FUNÇÕES DE DADOS ---
+            function inicializarDados() {
+                const dadosSalvos = localStorage.getItem(DADOS_VOTOS_KEY);
+                if (!dadosSalvos) {
+                    const dadosIniciais = {
+                        "Peruíbe": { lat: -24.3203, lon: -47.0039, lideres: [{ id: Date.now(), nome: "FÁBIO MARIANO", telefone: "139999-9999", votos: 700 }] },
+                        "Registro": { lat: -24.4886, lon: -47.8444, lideres: [{ id: Date.now(), nome: "DEP. LUCAS BOVE", telefone: "1399999999", votos: 3000 }] },
+                        "Piedade": { lat: -23.7131, lon: -47.4239, lideres: [{ id: Date.now(), nome: "JUNIOR JK", telefone: "139999-9999", votos: 2500 }] },
+                        "Paranapanema": { lat: -23.3886, lon: -48.7239, lideres: [{ id: Date.now(), nome: "PREFEITO RODOLFO", telefone: "139999-9999", votos: 5000 }] }
+                    };
+                    localStorage.setItem(DADOS_VOTOS_KEY, JSON.stringify(dadosIniciais));
+                }
+            }
+
+            function carregarTodosDados() { return JSON.parse(localStorage.getItem(DADOS_VOTOS_KEY) || '{}'); }
+            function salvarTodosDados(dados) { localStorage.setItem(DADOS_VOTOS_KEY, JSON.stringify(dados)); }
+            
+            function carregarDadosMunicipio(municipioNome) {
+                const todosDados = carregarTodosDados();
+                return todosDados[municipioNome] || { lat: 0, lon: 0, lideres: [] };
+            }
+            
+            function calcularVotosTotaisMunicipio(dadosMunicipio) {
+                return dadosMunicipio.lideres.reduce((acc, lider) => acc + (parseInt(lider.votos, 10) || 0), 0);
+            }
+
+            // --- FUNÇÕES DO PLACAR GERAL ---
+            function calcularTotalGeralDeVotos() {
+                const todosDados = carregarTodosDados();
+                let totalGeral = 0;
+                for (const municipioNome in todosDados) {
+                    totalGeral += calcularVotosTotaisMunicipio(todosDados[municipioNome]);
+                }
+                return totalGeral;
+            }
+
+            function calcularTopLideres() {
+                const todosDados = carregarTodosDados();
+                const todosLideres = [];
+                for (const municipioNome in todosDados) {
+                    todosDados[municipioNome].lideres.forEach(lider => {
+                        todosLideres.push({ ...lider, municipio: municipioNome });
+                    });
+                }
+                todosLideres.sort((a, b) => (b.votos || 0) - (a.votos || 0));
+                return todosLideres.slice(0, 3);
+            }
+
+            function atualizarPlacarGeral() {
+                const total = calcularTotalGeralDeVotos();
+                document.getElementById('total-votos-valor').textContent = total.toLocaleString('pt-BR');
+
+                const topLideres = calcularTopLideres();
+                const listaEl = document.getElementById('ranking-lideres-lista');
+                listaEl.innerHTML = ''; 
+
+                if (topLideres.length === 0) {
+                    listaEl.innerHTML = '<li class="text-gray-500">Nenhum líder.</li>';
+                    return;
+                }
+
+                topLideres.forEach(lider => {
+                    const item = document.createElement('li');
+                    item.className = "truncate";
+                    item.innerHTML = `
+                        <span class="font-semibold">${lider.nome}</span> (${(lider.votos || 0).toLocaleString('pt-BR')})
+                        <span class="block text-gray-500 -mt-1">${lider.municipio}</span>
+                    `;
+                    listaEl.appendChild(item);
+                });
+            }
+
+            // --- FUNÇÕES DE VISUALIZAÇÃO NO MAPA ---
+            function calcularRaio(votos) { return votos > 0 ? Math.sqrt(votos) * 80 : 0; }
+
+            function desenharCirculoNoMapa(municipioNome, dados) {
+                if (mapLayers[municipioNome]) map.removeLayer(mapLayers[municipioNome]);
+                
+                const votosTotais = calcularVotosTotaisMunicipio(dados);
+                const circle = L.circle([dados.lat, dados.lon], {
+                    color: '#3388ff', fillColor: '#3388ff', fillOpacity: 0.4,
+                    radius: calcularRaio(votosTotais)
+                }).addTo(map);
+
+                circle.bindPopup(() => criarConteudoPopup(municipioNome));
+                mapLayers[municipioNome] = circle;
+            }
+
+            function redesenharMapaCompleto() {
+                Object.values(mapLayers).forEach(layer => map.removeLayer(layer));
+                const todosDados = carregarTodosDados();
+                for (const nomeMunicipio in todosDados) {
+                    desenharCirculoNoMapa(nomeMunicipio, todosDados[nomeMunicipio]);
+                }
+            }
+            
+            function atualizarVisualizacaoMunicipio(municipioNome) {
+                const dados = carregarDadosMunicipio(municipioNome);
+                desenharCirculoNoMapa(municipioNome, dados);
+                atualizarPlacarGeral();
+            }
+
+            // --- FUNÇÕES DE CONTEÚDO E INTERAÇÃO ---
+            function criarConteudoPopup(municipioNome) {
+                const dados = carregarDadosMunicipio(municipioNome);
+                const votosTotais = calcularVotosTotaisMunicipio(dados);
+                let lideresHtml = dados.lideres.map(lider => {
+                    const numeroLimpo = lider.telefone.replace(/\D/g, '');
+                    return `
+                    <div class="border-t mt-2 pt-2">
+                        <p><strong>Líder:</strong> ${lider.nome}</p>
+                        <p><strong>Votos:</strong> ${(lider.votos || 0).toLocaleString('pt-BR')}</p>
+                        <div class="flex items-center justify-between">
+                            <p><strong>Contato:</strong> ${lider.telefone}</p>
+                            <a href="https://wa.me/55${numeroLimpo}" target="_blank" title="Abrir no WhatsApp" class="p-1 rounded-full hover:bg-green-100 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 16 16">
+                                    <path d="M13.601 2.326A7.85 7.85 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.9 7.9 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.9 7.9 0 0 0 13.6 2.326zM7.994 14.521a6.6 6.6 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.56 6.56 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592m3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.73.73 0 0 0-.529.247c-.182.198-.691.677-.691 1.654s.71 1.916.81 2.049c.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                if (dados.lideres.length === 0) lideresHtml = '<p>Nenhum líder cadastrado.</p>';
+
+                return `
+                    <div class="p-1" style="max-width: 280px">
+                        <h3 class="text-lg font-bold text-gray-800">${municipioNome}</h3>
+                        <p class="font-semibold text-blue-600">Total de Votos: ${votosTotais.toLocaleString('pt-BR')}</p>
+                        ${lideresHtml}
+                        <button onclick="abrirModalGerenciamento('${municipioNome}')" class="mt-3 w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded">
+                            Gerenciar Líderes
+                        </button>
+                    </div>
+                `;
+            }
+
+            window.abrirModalGerenciamento = (municipioNome) => {
+                municipioEmGerenciamento = municipioNome;
+                document.getElementById('manage-modal-title').textContent = municipioNome;
+                renderizarListaLideres(municipioNome);
+                document.getElementById('manage-lideres-modal').classList.remove('hidden');
+            };
+
+            function renderizarListaLideres(municipioNome) {
+                const dados = carregarDadosMunicipio(municipioNome);
+                const listaEl = document.getElementById('lideres-list');
+                listaEl.innerHTML = ''; 
+
+                if (dados.lideres.length === 0) {
+                    listaEl.innerHTML = '<p class="text-gray-500 text-center">Nenhum líder cadastrado para este município.</p>';
+                    return;
+                }
+
+                dados.lideres.forEach(lider => {
+                    const item = document.createElement('div');
+                    item.className = 'bg-gray-100 p-3 rounded-md flex flex-wrap items-center justify-between';
+                    item.innerHTML = `
+                        <div class="flex-grow">
+                            <p class="font-semibold">${lider.nome}</p>
+                            <p class="text-sm text-gray-600">Votos: ${(lider.votos || 0).toLocaleString('pt-BR')} | Contato: ${lider.telefone}</p>
+                        </div>
+                        <button onclick="removerLider('${municipioNome}', ${lider.id})" class="ml-4 px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded">Remover</button>
+                    `;
+                    listaEl.appendChild(item);
+                });
+            }
+            
+            window.removerLider = (municipioNome, liderId) => {
+                if (!confirm(`Tem certeza que deseja remover este líder?`)) return;
+
+                const todosDados = carregarTodosDados();
+                const dadosMunicipio = todosDados[municipioNome];
+                dadosMunicipio.lideres = dadosMunicipio.lideres.filter(l => l.id !== liderId);
+                salvarTodosDados(todosDados);
+                
+                renderizarListaLideres(municipioNome);
+                atualizarVisualizacaoMunicipio(municipioNome);
+            };
+
+            // --- LÓGICA DOS MODAIS ---
+            
+            // Modal de Gerenciamento
+            document.getElementById('close-manage-modal-btn').addEventListener('click', () => {
+                document.getElementById('manage-lideres-modal').classList.add('hidden');
+                municipioEmGerenciamento = null;
+            });
+
+            document.getElementById('save-new-lider-btn').addEventListener('click', () => {
+                const nome = document.getElementById('add-lider-nome').value.trim();
+                const votosInput = document.getElementById('add-lider-votos').value.trim();
+                const telefone = document.getElementById('add-lider-contato').value.trim();
+
+                if (!nome || !votosInput || !telefone) {
+                    alert('Todos os campos (Nome, Votos e Contato) são obrigatórios para continuar.');
+                    return;
+                }
+                
+                const votos = parseInt(votosInput, 10);
+                if (isNaN(votos)) {
+                    alert('O campo "Votos" deve conter um número válido.');
+                    return;
+                }
+                
+                const whatsappNumber = "5513996476655"; 
+                const titulo = "CADASTRO DE NOVO LIDER";
+                const mensagem = `${titulo}\n\n*Município:* ${municipioEmGerenciamento}\n*Novo Líder:* ${nome}\n*Votos:* ${votos}\n*Contato:* ${telefone}`;
+                const mensagemCodificada = encodeURIComponent(mensagem);
+                const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${mensagemCodificada}`;
+                window.open(whatsappUrl, '_blank');
+
+                const todosDados = carregarTodosDados();
+                const dadosMunicipio = todosDados[municipioEmGerenciamento];
+                dadosMunicipio.lideres.push({ id: Date.now(), nome, votos, telefone });
+                salvarTodosDados(todosDados);
+
+                document.getElementById('add-lider-nome').value = '';
+                document.getElementById('add-lider-votos').value = '';
+                document.getElementById('add-lider-contato').value = '';
+                renderizarListaLideres(municipioEmGerenciamento);
+                atualizarVisualizacaoMunicipio(municipioEmGerenciamento);
+            });
+            
+            // Modal de Cadastro Principal
+            const addLiderModalPrincipal = document.getElementById('add-lider-modal-principal');
+            document.getElementById('add-lider-btn-principal').addEventListener('click', () => addLiderModalPrincipal.classList.remove('hidden'));
+            document.getElementById('cancel-lider-principal-btn').addEventListener('click', () => addLiderModalPrincipal.classList.add('hidden'));
+
+            document.getElementById('geocode-btn-principal').addEventListener('click', async () => {
+                const municipioNome = document.getElementById('municipioInputPrincipal').value;
+                const statusEl = document.getElementById('geocode-status-principal');
+                statusEl.textContent = 'Buscando...';
+                try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(municipioNome)}, Brasil`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                        document.getElementById('latInputPrincipal').value = data[0].lat;
+                        document.getElementById('lonInputPrincipal').value = data[0].lon;
+                        statusEl.textContent = `Coordenadas encontradas!`;
+                    } else { statusEl.textContent = 'Município não encontrado.'; }
+                } catch (error) { statusEl.textContent = 'Erro ao buscar.'; }
+            });
+
+            document.getElementById('save-lider-principal-btn').addEventListener('click', () => {
+                const municipioNome = document.getElementById('municipioInputPrincipal').value.trim();
+                const lat = parseFloat(document.getElementById('latInputPrincipal').value);
+                const lon = parseFloat(document.getElementById('lonInputPrincipal').value);
+                const liderNome = document.getElementById('novoNomeInputPrincipal').value.trim();
+                const votos = parseInt(document.getElementById('novoVotosInputPrincipal').value, 10) || 0;
+                const contato = document.getElementById('novoContatoInputPrincipal').value.trim();
+
+                if (!municipioNome || !lat || !lon || !liderNome || !contato) {
+                    alert('Preencha todos os campos e busque as coordenadas antes de salvar.');
+                    return;
+                }
+
+                // Envia para o WhatsApp
+                const whatsappNumber = "5513996476655"; 
+                const titulo = "CADASTRO DE NOVO LIDER";
+                const mensagem = `${titulo}\n\n*Município:* ${municipioNome}\n*Novo Líder:* ${liderNome}\n*Votos:* ${votos}\n*Contato:* ${contato}`;
+                const mensagemCodificada = encodeURIComponent(mensagem);
+                const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${mensagemCodificada}`;
+                window.open(whatsappUrl, '_blank');
+
+                const todosDados = carregarTodosDados();
+                const novoLider = { id: Date.now(), nome: liderNome, votos: votos, telefone: contato };
+
+                if (todosDados[municipioNome]) {
+                    todosDados[municipioNome].lideres.push(novoLider);
+                } else {
+                    todosDados[municipioNome] = { lat, lon, lideres: [novoLider] };
+                }
+
+                salvarTodosDados(todosDados);
+                atualizarVisualizacaoMunicipio(municipioNome);
+                
+                // Limpa e fecha o modal
+                document.getElementById('municipioInputPrincipal').value = '';
+                document.getElementById('latInputPrincipal').value = '';
+                document.getElementById('lonInputPrincipal').value = '';
+                document.getElementById('novoNomeInputPrincipal').value = '';
+                document.getElementById('novoVotosInputPrincipal').value = '';
+                document.getElementById('novoContatoInputPrincipal').value = '';
+                document.getElementById('geocode-status-principal').textContent = '';
+                addLiderModalPrincipal.classList.add('hidden');
+            });
+
+            // --- INICIALIZAÇÃO DO APLICATIVO ---
+            inicializarDados();
+            redesenharMapaCompleto();
+            atualizarPlacarGeral(); 
+        }
+    </script>
+</body>
+</html>
