@@ -121,11 +121,12 @@
         });
 
         function iniciarAplicacao() {
-            const map = L.map('map').setView([-23.9, -47.7], 8);
+            const map = L.map('map').setView([-22.5, -48.0], 7); // Ajustei levemente o zoom inicial para pegar melhor o estado
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
 
             const mapLayers = {};
-            const DADOS_VOTOS_KEY = 'mapaBolsonaroDados_v1';
+            // Atualizei a chave para v2 para forçar o carregamento dos novos dados
+            const DADOS_VOTOS_KEY = 'mapaBolsonaroDados_v2';
             let municipioEmGerenciamento = null;
             
             function inicializarDados() {
@@ -152,10 +153,15 @@
                         "Palmeira d'Oeste": { lat: -20.16, lon: -50.81, lideres: [{ id: Date.now(), nome: "prefeito valdir", telefone: "Contato não informado", votos: 5537 }] },
                         "Panorama": { lat: -21.35, lon: -51.85, lideres: [{ id: Date.now(), nome: "Eneas", telefone: "Contato não informado", votos: 7770 }] },
                         "Piracicaba": { lat: -22.72, lon: -47.64, lideres: [{ id: Date.now(), nome: "(Sem líder informado)", telefone: "Contato não informado", votos: 198468 }] },
-                        "Rio das Pedras": { lat: -22.84, lon: -47.60, lideres: [{ id: Date.now(), nome: "Prefeito / Vere", telefone: "Contato não informado", votos: 19034 }] },
+                        "Rio das Pedras": { lat: -22.84, lon: -47.60, lideres: [{ id: Date.now(), nome: "Prefeito / Vereador Paulo Campos", telefone: "Contato não informado", votos: 19034 }] },
                         "Santa Fé do Sul": { lat: -20.21, lon: -50.92, lideres: [{ id: Date.now(), nome: "Vereador Mur", telefone: "Contato não informado", votos: 17745 }] },
                         "São Sebastião": { lat: -23.76, lon: -45.40, lideres: [{ id: Date.now(), nome: "(Sem líder informado)", telefone: "Contato não informado", votos: 51303 }] },
-                        "Ubatuba": { lat: -23.43, lon: -45.07, lideres: [{ id: Date.now(), nome: "(Sem líder informado)", telefone: "Contato não informado", votos: 52682 }] }
+                        "Ubatuba": { lat: -23.43, lon: -45.07, lideres: [{ id: Date.now(), nome: "(Sem líder informado)", telefone: "Contato não informado", votos: 52682 }] },
+                        
+                        // NOVOS MUNICÍPIOS
+                        "Mombuca": { lat: -22.92, lon: -47.56, lideres: [{ id: Date.now() + 1, nome: "Vereador Linguinha", telefone: "Contato não informado", votos: 2572 }] },
+                        "Lins": { lat: -21.67, lon: -49.75, lideres: [{ id: Date.now() + 2, nome: "Ieda / Carlos Honório / Marco Borsonaro", telefone: "Contato não informado", votos: 36085 }] },
+                        "Promissão": { lat: -21.53, lon: -49.86, lideres: [{ id: Date.now() + 3, nome: "Ieda / Carlos Honório / Marco Borsonaro", telefone: "Contato não informado", votos: 18633 }] }
                     };
 
                     localStorage.setItem(DADOS_VOTOS_KEY, JSON.stringify(dadosIniciais));
@@ -229,13 +235,12 @@
                 
                 const votosTotais = calcularVotosTotaisMunicipio(dados);
                 
-                // ***** MUDANÇAS FEITAS AQUI *****
                 const circle = L.circle([dados.lat, dados.lon], {
                     color: '#FF0000',      // Cor da borda (Vermelho)
                     opacity: 1.0,           // Opacidade da borda (Sólida)
-                    weight: 1.5,            // Aumentei um pouco a espessura da borda
+                    weight: 1.5,            
                     fillColor: '#7FFF00',   // Cor do preenchimento (Verde-Limão)
-                    fillOpacity: 0.5,       // Opacidade do preenchimento
+                    fillOpacity: 0.5,       
                     radius: calcularRaio(votosTotais)
                 }).addTo(map);
 
@@ -453,4 +458,3 @@
     </script>
 </body>
 </html>
-
